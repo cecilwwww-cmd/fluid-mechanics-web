@@ -7,9 +7,10 @@ const controls = {
   pushSpeed: document.getElementById("pushSpeed"),
   inputDiameter: document.getElementById("inputDiameter"),
   outputDiameter: document.getElementById("outputDiameter"),
+  tubeDiameter: document.getElementById("tubeDiameter"),
   tubeLength: document.getElementById("tubeLength"),
+  minorK: document.getElementById("minorK"),
   airBubble: document.getElementById("airBubble"),
-  friction: document.getElementById("friction"),
   leakage: document.getElementById("leakage")
 };
 
@@ -20,32 +21,62 @@ const outputs = {
   inputStroke: document.getElementById("inputStrokeReadout"),
   outputStroke: document.getElementById("outputStrokeReadout"),
   flow: document.getElementById("flowReadout"),
+  reynolds: document.getElementById("reReadout"),
   boomStrokeValue: document.getElementById("boomStrokeValue"),
   armStrokeValue: document.getElementById("armStrokeValue"),
   bucketStrokeValue: document.getElementById("bucketStrokeValue"),
   pushSpeedValue: document.getElementById("pushSpeedValue"),
   inputDiameterValue: document.getElementById("inputDiameterValue"),
   outputDiameterValue: document.getElementById("outputDiameterValue"),
+  tubeDiameterValue: document.getElementById("tubeDiameterValue"),
   tubeLengthValue: document.getElementById("tubeLengthValue"),
+  minorKValue: document.getElementById("minorKValue"),
   airBubbleValue: document.getElementById("airBubbleValue"),
-  frictionValue: document.getElementById("frictionValue"),
   leakageValue: document.getElementById("leakageValue"),
-  pascalFormula: document.getElementById("pascalFormula"),
+  idealPressureFormula: document.getElementById("idealPressureFormula"),
   continuityFormula: document.getElementById("continuityFormula"),
-  strokeFormula: document.getElementById("strokeFormula")
+  majorLossFormula: document.getElementById("majorLossFormula"),
+  minorLossFormula: document.getElementById("minorLossFormula"),
+  regime: document.getElementById("regimeReadout"),
+  hf: document.getElementById("hfReadout"),
+  hm: document.getElementById("hmReadout"),
+  lossPressure: document.getElementById("lossPressureReadout"),
+  idealForce: document.getElementById("idealForceReadout"),
+  realForce: document.getElementById("realForceReadout"),
+  hypothesis: document.getElementById("experimentHypothesis")
 };
 
 const playToggle = document.getElementById("playToggle");
 const resetButton = document.getElementById("resetButton");
 const sampleButton = document.getElementById("sampleButton");
 const clearLog = document.getElementById("clearLog");
+const exportCsv = document.getElementById("exportCsv");
 const logBody = document.getElementById("logBody");
+const runIdealButton = document.getElementById("runIdeal");
+const runTubeButton = document.getElementById("runTube");
+const runMinorButton = document.getElementById("runMinor");
+const chartCanvas = document.getElementById("chartCanvas");
+const chartTitle = document.getElementById("chartTitle");
+const chartSummary = document.getElementById("chartSummary");
+const runStatus = document.getElementById("runStatus");
 
 const circuitMeta = {
-  boom: { name: "主臂", control: "boomStroke", color: 0x0d7c8e, css: "#0d7c8e", z: -0.85 },
-  arm: { name: "小臂", control: "armStroke", color: 0xd68a12, css: "#d68a12", z: 0 },
-  bucket: { name: "铲斗", control: "bucketStroke", color: 0x2f9b58, css: "#2f9b58", z: 0.85 }
+  boom: { name: "Boom", control: "boomStroke", color: 0x0d7c8e, css: "#0d7c8e", z: -0.85 },
+  arm: { name: "Forearm", control: "armStroke", color: 0xd68a12, css: "#d68a12", z: 0 },
+  bucket: { name: "Bucket", control: "bucketStroke", color: 0x2f9b58, css: "#2f9b58", z: 0.85 }
 };
+
+Object.assign(circuitMeta, {
+  boom: { name: "Boom", control: "boomStroke", color: 0x0d7c8e, css: "#0d7c8e", z: -0.85 },
+  arm: { name: "Forearm", control: "armStroke", color: 0xd68a12, css: "#d68a12", z: 0 },
+  bucket: { name: "Bucket", control: "bucketStroke", color: 0x2f9b58, css: "#2f9b58", z: 0.85 }
+});
+
+const WATER_DENSITY = 1000;
+const WATER_VISCOSITY = 1.0e-3;
+const GRAVITY = 9.81;
+const trialLog = [];
+let chartSeries = [];
 
 let running = false;
 let direction = 1;
@@ -159,34 +190,184 @@ function clamp(number, min, max) {
   return Math.min(Math.max(number, min), max);
 }
 
+function selectedExperiment() {
+  return document.querySelector("input[name='experiment']:checked").value;
+}
+
+function experimentInfo(mode) {
+  const info = {
+    ideal: {
+      name: "Ideal transmission",
+      hypothesis: "Hypothesis: increasing output piston area increases output force but reduces output stroke."
+    },
+    tube: {
+      name: "Tube flow loss",
+      hypothesis: "Hypothesis: longer tubes and faster pushing increase friction head loss and reduce output pressure."
+    },
+    minor: {
+      name: "Minor losses",
+      hypothesis: "Hypothesis: connectors, bends, and narrow outlets add local losses and reduce efficiency."
+    }
+  };
+  return info[mode] || info.ideal;
+}
+
+function frictionFactor(reynolds) {
+  if (reynolds <= 0) return 0;
+  if (reynolds < 2000) return 64 / reynolds;
+  if (reynolds < 3000) {
+    const laminar = 64 / reynolds;
+    const turbulent = 0.3164 / Math.pow(reynolds, 0.25);
+    const weight = (reynolds - 2000) / 1000;
+    return laminar * (1 - weight) + turbulent * weight;
+  }
+  return 0.3164 / Math.pow(reynolds, 0.25);
+}
+
+function flowRegime(reynolds) {
+  if (reynolds < 2000) return "Laminar";
+  if (reynolds < 3000) return "Transitional";
+  return "Turbulent";
+}
+
+function calculateCircuit(inputStroke, common) {
+  const inputVolumeMl = common.inputArea * inputStroke / 1000;
+  const idealOutputStroke = (inputVolumeMl * 1000) / common.outputArea;
+  const outputStroke = clamp(idealOutputStroke * common.volumeCorrection, 0, 80);
+  const pressureKpa = Math.max(common.outputPressureKpa, 0);
+  const idealOutputForce = common.idealPressureKpa * 1000 * common.outputArea * 1e-6;
+  const outputForce = pressureKpa * 1000 * common.outputArea * 1e-6;
+  const efficiency = clamp(
+    (outputForce * outputStroke) / Math.max(common.handForce * inputStroke, 1),
+    0,
+    1
+  );
+
+  return {
+    inputStroke,
+    idealOutputStroke,
+    outputStroke,
+    pressureKpa,
+    idealOutputForce,
+    outputForce,
+    efficiency,
+    normalized: clamp(outputStroke / 42, 0, 1)
+  };
+}
+
+function calculateState() {
+  const mode = selectedExperiment();
+  const pushSpeed = value("pushSpeed");
+  const inputDiameter = value("inputDiameter");
+  const outputDiameter = value("outputDiameter");
+  const tubeDiameter = value("tubeDiameter");
+  const tubeLengthCm = value("tubeLength");
+  const minorKInput = value("minorK");
+  const airBubble = value("airBubble") / 100;
+  const leakage = value("leakage") / 100;
+  const inputArea = areaFromDiameterMm(inputDiameter);
+  const outputArea = areaFromDiameterMm(outputDiameter);
+  const tubeArea = areaFromDiameterMm(tubeDiameter);
+  const flowRateMlS = inputArea * pushSpeed / 1000;
+  const tubeVelocity = (flowRateMlS * 1e-6) / (tubeArea * 1e-6);
+  const tubeLengthM = tubeLengthCm / 100;
+  const tubeDiameterM = tubeDiameter / 1000;
+  const reynolds = WATER_DENSITY * tubeVelocity * tubeDiameterM / WATER_VISCOSITY;
+  const f = frictionFactor(reynolds);
+  const hfPhysical = f * (tubeLengthM / tubeDiameterM) * (tubeVelocity ** 2) / (2 * GRAVITY);
+  const hmPhysical = minorKInput * (tubeVelocity ** 2) / (2 * GRAVITY);
+  const hf = mode === "ideal" ? 0 : hfPhysical;
+  const hm = mode === "minor" ? hmPhysical : 0;
+  const totalHeadLoss = hf + hm;
+  const pressureLossKpa = WATER_DENSITY * GRAVITY * totalHeadLoss / 1000;
+  const handForce = 18 + pushSpeed * 0.24;
+  const idealPressureKpa = (handForce / (inputArea * 1e-6)) / 1000;
+  const outputPressureKpa = Math.max(idealPressureKpa - pressureLossKpa, 0);
+  const physicalVolumeCorrection = clamp((1 - leakage) * (1 - airBubble * 0.62), 0.65, 1);
+  const volumeCorrection = mode === "ideal" ? 1 : physicalVolumeCorrection;
+  const common = {
+    inputArea,
+    outputArea,
+    handForce,
+    idealPressureKpa,
+    outputPressureKpa,
+    volumeCorrection
+  };
+  const circuits = {
+    boom: calculateCircuit(value("boomStroke"), common),
+    arm: calculateCircuit(value("armStroke"), common),
+    bucket: calculateCircuit(value("bucketStroke"), common)
+  };
+  const active = selectedCircuit();
+
+  return {
+    mode,
+    active,
+    circuits,
+    pushSpeed,
+    inputDiameter,
+    outputDiameter,
+    tubeDiameter,
+    tubeLengthCm,
+    minorKInput,
+    airBubble,
+    leakage,
+    inputArea,
+    outputArea,
+    tubeArea,
+    flowRateMlS,
+    tubeVelocity,
+    reynolds,
+    frictionFactor: f,
+    regime: flowRegime(reynolds),
+    hf,
+    hm,
+    totalHeadLoss,
+    pressureLossKpa,
+    handForce,
+    idealPressureKpa,
+    outputPressureKpa,
+    volumeCorrection
+  };
+}
+
 function syncReadouts() {
   state = calculateState();
   const active = state.circuits[state.active];
-
   outputs.pressure.textContent = `${active.pressureKpa.toFixed(2)} kPa`;
   outputs.force.textContent = `${active.outputForce.toFixed(2)} N`;
   outputs.efficiency.textContent = `${Math.round(active.efficiency * 100)}%`;
   outputs.inputStroke.textContent = `${active.inputStroke.toFixed(1)} mm`;
   outputs.outputStroke.textContent = `${active.outputStroke.toFixed(1)} mm`;
-  outputs.flow.textContent = `${state.flowRate.toFixed(1)} mL/s`;
+  outputs.flow.textContent = `${state.flowRateMlS.toFixed(1)} mL/s`;
+  outputs.reynolds.textContent = `${Math.round(state.reynolds)}`;
   outputs.boomStrokeValue.textContent = `${state.circuits.boom.inputStroke.toFixed(1)} mm`;
   outputs.armStrokeValue.textContent = `${state.circuits.arm.inputStroke.toFixed(1)} mm`;
   outputs.bucketStrokeValue.textContent = `${state.circuits.bucket.inputStroke.toFixed(1)} mm`;
   outputs.pushSpeedValue.textContent = `${state.pushSpeed.toFixed(0)} mm/s`;
   outputs.inputDiameterValue.textContent = `${state.inputDiameter.toFixed(1)} mm`;
   outputs.outputDiameterValue.textContent = `${state.outputDiameter.toFixed(1)} mm`;
-  outputs.tubeLengthValue.textContent = `${state.tubeLength.toFixed(0)} cm`;
+  outputs.tubeDiameterValue.textContent = `${state.tubeDiameter.toFixed(2)} mm`;
+  outputs.tubeLengthValue.textContent = `${state.tubeLengthCm.toFixed(0)} cm`;
+  outputs.minorKValue.textContent = `${state.minorKInput.toFixed(1)}`;
   outputs.airBubbleValue.textContent = `${Math.round(state.airBubble * 100)}%`;
-  outputs.frictionValue.textContent = `${Math.round(state.friction * 100)}%`;
-  outputs.leakageValue.textContent = `${Math.round(state.leakage * 100)}%`;
-  outputs.pascalFormula.textContent = `P = ${active.pressureKpa.toFixed(2)} kPa (${circuitMeta[state.active].name})`;
-  outputs.continuityFormula.textContent = `Q = ${state.inputArea.toFixed(0)} mm² × ${state.pushSpeed.toFixed(0)} mm/s`;
-  outputs.strokeFormula.textContent = `s₂ = ${(state.inputArea / state.outputArea).toFixed(2)} × s₁ × 损失修正`;
+  outputs.leakageValue.textContent = `${(state.leakage * 100).toFixed(1)}%`;
+  outputs.idealPressureFormula.innerHTML = `<i>P</i><sub>in</sub> = ${state.idealPressureKpa.toFixed(2)} kPa`;
+  outputs.continuityFormula.innerHTML = `<i>Q</i> = ${state.inputArea.toFixed(0)} mm<sup>2</sup> &times; ${state.pushSpeed.toFixed(0)} mm/s`;
+  outputs.majorLossFormula.innerHTML = `<i>h</i><sub>f</sub> = ${state.hf.toFixed(4)} m, <i>Re</i> = ${Math.round(state.reynolds)}`;
+  outputs.minorLossFormula.innerHTML = `<i>h</i><sub>L,minor</sub> = ${state.hm.toFixed(4)} m, <i>K</i> = ${state.minorKInput.toFixed(1)}`;
+  outputs.regime.textContent = state.regime;
+  outputs.hf.textContent = `${state.hf.toFixed(4)} m`;
+  outputs.hm.textContent = `${state.hm.toFixed(4)} m`;
+  outputs.lossPressure.textContent = `${state.pressureLossKpa.toFixed(3)} kPa`;
+  outputs.idealForce.textContent = `${active.idealOutputForce.toFixed(2)} N`;
+  outputs.realForce.textContent = `${active.outputForce.toFixed(2)} N`;
+  outputs.hypothesis.textContent = experimentInfo(state.mode).hypothesis;
 }
 
 function initThree() {
   if (!window.THREE) {
-    stage.innerHTML = '<div class="webgl-error">Three.js 未加载，请检查 vendor/three.min.js。</div>';
+    stage.innerHTML = '<div class="webgl-error">Three.js failed to load. Please check vendor/three.min.js.</div>';
     return false;
   }
 
@@ -390,7 +571,7 @@ function renderModel(time) {
     updateCamera();
     renderer.render(scene, camera);
   } catch (error) {
-    stage.innerHTML = `<div class="webgl-error">3D 渲染错误：${error.message}</div>`;
+    stage.innerHTML = `<div class="webgl-error">3D rendering error: ${error.message}</div>`;
     renderer = null;
     throw error;
   }
@@ -680,21 +861,337 @@ function tick(now) {
 }
 
 function recordSample() {
+  state = calculateState();
   const active = state.circuits[state.active];
+  const trial = {
+    mode: experimentInfo(state.mode).name,
+    variable: "manual",
+    value: "-",
+    circuit: circuitMeta[state.active].name,
+    inputDiameter: state.inputDiameter.toFixed(1),
+    outputDiameter: state.outputDiameter.toFixed(1),
+    tubeDiameter: state.tubeDiameter.toFixed(2),
+    tubeLengthCm: state.tubeLengthCm.toFixed(0),
+    pushSpeed: state.pushSpeed.toFixed(0),
+    minorK: state.minorKInput.toFixed(1),
+    flowRateMlS: state.flowRateMlS.toFixed(2),
+    tubeVelocity: state.tubeVelocity.toFixed(3),
+    reynolds: Math.round(state.reynolds),
+    regime: state.regime,
+    hf: state.hf.toFixed(5),
+    hm: state.hm.toFixed(5),
+    pressureLossKpa: state.pressureLossKpa.toFixed(3),
+    idealForce: active.idealOutputForce.toFixed(2),
+    realForce: active.outputForce.toFixed(2),
+    outputStroke: active.outputStroke.toFixed(2),
+    efficiency: `${Math.round(active.efficiency * 100)}%`
+  };
+  addTrial(trial);
+}
+
+function formatVariableName(variable) {
+  const labels = {
+    "d_out/mm": "<i>d</i><sub>out</sub> / mm",
+    "L/cm": "<i>L</i> / cm",
+    "K": "<i>K</i>",
+    "manual": "manual"
+  };
+  return labels[variable] || variable;
+}
+
+function addTrial(trial) {
+  trialLog.unshift(trial);
   const row = document.createElement("tr");
   const cells = [
-    circuitMeta[state.active].name,
-    active.pressureKpa.toFixed(2),
-    active.outputForce.toFixed(2),
-    active.outputStroke.toFixed(1),
-    `${Math.round(active.efficiency * 100)}%`
+    trial.mode,
+    trial.variable,
+    trial.value,
+    trial.reynolds,
+    trial.pressureLossKpa,
+    trial.idealForce,
+    trial.realForce,
+    trial.efficiency
   ];
-  for (const cell of cells) {
+  cells.forEach((cell, index) => {
     const td = document.createElement("td");
-    td.textContent = cell;
+    if (index === 1) {
+      td.innerHTML = formatVariableName(cell);
+    } else {
+      td.textContent = cell;
+    }
     row.appendChild(td);
-  }
+  });
   logBody.prepend(row);
+}
+
+function exportTrialCsv() {
+  if (!trialLog.length) return;
+  const headers = Object.keys(trialLog[0]);
+  const escapeCsv = (value) => `"${String(value).replaceAll('"', '""')}"`;
+  const csv = [
+    headers.join(","),
+    ...trialLog.map((trial) => headers.map((key) => escapeCsv(trial[key])).join(","))
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "hydraulic-excavator-trials.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function setExperimentMode(mode) {
+  const radio = document.querySelector(`input[name='experiment'][value='${mode}']`);
+  if (radio) radio.checked = true;
+}
+
+function setActiveCircuit(circuit) {
+  const radio = document.querySelector(`input[name='circuit'][value='${circuit}']`);
+  if (radio) radio.checked = true;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function animateStroke(control, targetStroke) {
+  const steps = 24;
+  control.value = 0;
+  markModelDirty();
+  await sleep(40);
+  for (let i = 1; i <= steps; i += 1) {
+    control.value = targetStroke * (i / steps);
+    markModelDirty();
+    await sleep(28);
+  }
+}
+
+function setBusy(isBusy) {
+  for (const button of [runIdealButton, runTubeButton, runMinorButton, sampleButton, exportCsv, clearLog]) {
+    button.disabled = isBusy;
+  }
+}
+
+function clearExperimentData() {
+  trialLog.length = 0;
+  logBody.textContent = "";
+  chartSeries = [];
+  drawChart();
+}
+
+function trialFromState(variable, valueLabel) {
+  state = calculateState();
+  const active = state.circuits[state.active];
+  return {
+    mode: experimentInfo(state.mode).name,
+    variable,
+    value: valueLabel,
+    circuit: circuitMeta[state.active].name,
+    inputDiameter: state.inputDiameter.toFixed(1),
+    outputDiameter: state.outputDiameter.toFixed(1),
+    tubeDiameter: state.tubeDiameter.toFixed(2),
+    tubeLengthCm: state.tubeLengthCm.toFixed(0),
+    pushSpeed: state.pushSpeed.toFixed(0),
+    minorK: state.minorKInput.toFixed(1),
+    flowRateMlS: state.flowRateMlS.toFixed(2),
+    tubeVelocity: state.tubeVelocity.toFixed(3),
+    reynolds: Math.round(state.reynolds),
+    regime: state.regime,
+    hf: state.hf.toFixed(5),
+    hm: state.hm.toFixed(5),
+    pressureLossKpa: state.pressureLossKpa.toFixed(3),
+    idealForce: active.idealOutputForce.toFixed(2),
+    realForce: active.outputForce.toFixed(2),
+    outputStroke: active.outputStroke.toFixed(2),
+    efficiency: `${Math.round(active.efficiency * 100)}%`
+  };
+}
+
+function resizeChartCanvas() {
+  if (!chartCanvas) return;
+  const rect = chartCanvas.getBoundingClientRect();
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(Math.round(rect.width * ratio), 600);
+  const height = Math.max(Math.round(rect.height * ratio), 260);
+  if (chartCanvas.width !== width || chartCanvas.height !== height) {
+    chartCanvas.width = width;
+    chartCanvas.height = height;
+  }
+}
+
+function drawChart() {
+  if (!chartCanvas) return;
+  resizeChartCanvas();
+  const ctx = chartCanvas.getContext("2d");
+  const width = chartCanvas.width;
+  const height = chartCanvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+
+  const pad = { left: 64, right: 28, top: 30, bottom: 52 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  ctx.strokeStyle = "#cbd8df";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, pad.top + plotH);
+  ctx.lineTo(pad.left + plotW, pad.top + plotH);
+  ctx.stroke();
+
+  if (!chartSeries.length || !chartSeries[0].points.length) {
+    ctx.fillStyle = "#5f7180";
+    ctx.font = "18px Segoe UI, Arial";
+    ctx.fillText("Click Run Experiment to generate data curves.", pad.left + 20, pad.top + 60);
+    return;
+  }
+
+  const allPoints = chartSeries.flatMap((series) => series.points);
+  const minX = Math.min(...allPoints.map((p) => p.x));
+  const maxX = Math.max(...allPoints.map((p) => p.x));
+  const minY = 0;
+  const maxY = Math.max(...allPoints.map((p) => p.y)) * 1.12 || 1;
+  const xScale = (x) => pad.left + ((x - minX) / Math.max(maxX - minX, 1)) * plotW;
+  const yScale = (y) => pad.top + plotH - ((y - minY) / Math.max(maxY - minY, 1)) * plotH;
+
+  ctx.fillStyle = "#5f7180";
+  ctx.font = "13px Segoe UI, Arial";
+  for (let i = 0; i <= 4; i += 1) {
+    const y = minY + (maxY - minY) * (i / 4);
+    const py = yScale(y);
+    ctx.strokeStyle = "#edf3f6";
+    ctx.beginPath();
+    ctx.moveTo(pad.left, py);
+    ctx.lineTo(pad.left + plotW, py);
+    ctx.stroke();
+    ctx.fillText(y.toFixed(maxY > 20 ? 0 : 2), 12, py + 4);
+  }
+
+  ctx.fillStyle = "#5f7180";
+  ctx.fillText(chartSeries[0].xLabel || "Variable", pad.left + plotW / 2 - 30, height - 14);
+  ctx.save();
+  ctx.translate(18, pad.top + plotH / 2 + 35);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText(chartSeries[0].yLabel || "Value", 0, 0);
+  ctx.restore();
+
+  for (const series of chartSeries) {
+    ctx.strokeStyle = series.color;
+    ctx.fillStyle = series.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    series.points.forEach((point, index) => {
+      const x = xScale(point.x);
+      const y = yScale(point.y);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    for (const point of series.points) {
+      ctx.beginPath();
+      ctx.arc(xScale(point.x), yScale(point.y), 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  let legendX = pad.left + 8;
+  for (const series of chartSeries) {
+    ctx.fillStyle = series.color;
+    ctx.fillRect(legendX, 12, 18, 4);
+    ctx.fillStyle = "#17222a";
+    ctx.font = "13px Segoe UI, Arial";
+    ctx.fillText(series.name, legendX + 24, 17);
+    legendX += ctx.measureText(series.name).width + 58;
+  }
+}
+
+async function runAutomatedExperiment(mode) {
+  setBusy(true);
+  clearExperimentData();
+  setExperimentMode(mode);
+  setActiveCircuit("boom");
+  const activeControl = controls.boomStroke;
+  const original = {
+    outputDiameter: controls.outputDiameter.value,
+    tubeLength: controls.tubeLength.value,
+    minorK: controls.minorK.value
+  };
+  const config = {
+    ideal: {
+      title: "Experiment 1: Output diameter vs hydraulic force",
+      summary: "Ideal prediction verifies Pascal's law: larger output area produces larger force while stroke decreases.",
+      variable: "d_out/mm",
+      values: [12, 16, 20, 24, 28, 32],
+      setValue: (v) => { controls.outputDiameter.value = v; },
+      label: (v) => `${v} mm`,
+      xLabel: "Output diameter (mm)",
+      yLabel: "Output force (N)",
+      makeSeries: (points) => [
+        { name: "Ideal force", color: "#0d7c8e", xLabel: "Output diameter (mm)", yLabel: "Force (N)", points: points.map((p) => ({ x: p.x, y: p.idealForce })) },
+        { name: "Real force", color: "#d68a12", xLabel: "Output diameter (mm)", yLabel: "Force (N)", points: points.map((p) => ({ x: p.x, y: p.realForce })) }
+      ]
+    },
+    tube: {
+      title: "Experiment 2: Tube length vs pressure loss",
+      summary: "Tube friction loss increases with length, reducing output force compared with the ideal prediction.",
+      variable: "L/cm",
+      values: [20, 50, 80, 110, 140, 180],
+      setValue: (v) => { controls.tubeLength.value = v; },
+      label: (v) => `${v} cm`,
+      xLabel: "Tube length (cm)",
+      yLabel: "Pressure loss (kPa)",
+      makeSeries: (points) => [
+        { name: "Pressure loss", color: "#bd5447", xLabel: "Tube length (cm)", yLabel: "Pressure loss (kPa)", points: points.map((p) => ({ x: p.x, y: p.pressureLoss })) }
+      ]
+    },
+    minor: {
+      title: "Experiment 3: Connector K vs efficiency",
+      summary: "Minor losses from connectors and bends reduce useful output work and system efficiency.",
+      variable: "K",
+      values: [0, 0.6, 1.2, 2.0, 3.0, 4.0],
+      setValue: (v) => { controls.minorK.value = v; },
+      label: (v) => `${v.toFixed(1)}`,
+      xLabel: "Connector loss coefficient K",
+      yLabel: "Efficiency (%)",
+      makeSeries: (points) => [
+        { name: "Efficiency", color: "#2f9b58", xLabel: "Connector loss coefficient K", yLabel: "Efficiency (%)", points: points.map((p) => ({ x: p.x, y: p.efficiency })) }
+      ]
+    }
+  }[mode];
+
+  chartTitle.textContent = config.title;
+  chartSummary.textContent = "Running automated trial...";
+  runStatus.textContent = "Running";
+
+  const points = [];
+  for (const value of config.values) {
+    config.setValue(value);
+    await animateStroke(activeControl, 52);
+    state = calculateState();
+    const active = state.circuits[state.active];
+    const trial = trialFromState(config.variable, config.label(value));
+    addTrial(trial);
+    points.push({
+      x: value,
+      idealForce: Number(trial.idealForce),
+      realForce: Number(trial.realForce),
+      pressureLoss: Number(trial.pressureLossKpa),
+      efficiency: Number(trial.efficiency.replace("%", ""))
+    });
+    chartSeries = config.makeSeries(points);
+    drawChart();
+    await sleep(130);
+  }
+
+  controls.outputDiameter.value = original.outputDiameter;
+  controls.tubeLength.value = original.tubeLength;
+  controls.minorK.value = original.minorK;
+  markModelDirty();
+  chartSummary.textContent = config.summary;
+  runStatus.textContent = `Completed ${config.values.length} trials`;
+  setBusy(false);
 }
 
 for (const input of Object.values(controls)) {
@@ -708,9 +1205,16 @@ for (const input of document.querySelectorAll("input[name='circuit']")) {
   });
 }
 
+for (const input of document.querySelectorAll("input[name='experiment']")) {
+  input.addEventListener("change", () => {
+    direction = 1;
+    markModelDirty();
+  });
+}
+
 playToggle.addEventListener("click", () => {
   running = !running;
-  playToggle.textContent = running ? "暂停" : "运行";
+  playToggle.textContent = running ? "Pause" : "Run";
   playToggle.classList.toggle("is-running", running);
 });
 
@@ -720,19 +1224,39 @@ resetButton.addEventListener("click", () => {
   controls.boomStroke.value = 18;
   controls.armStroke.value = 16;
   controls.bucketStroke.value = 22;
-  playToggle.textContent = "运行";
+  playToggle.textContent = "Run";
   playToggle.classList.remove("is-running");
   markModelDirty();
 });
 
 sampleButton.addEventListener("click", recordSample);
+runIdealButton.addEventListener("click", () => runAutomatedExperiment("ideal"));
+runTubeButton.addEventListener("click", () => runAutomatedExperiment("tube"));
+runMinorButton.addEventListener("click", () => runAutomatedExperiment("minor"));
+playToggle.addEventListener("click", () => {
+  playToggle.textContent = running ? "Pause" : "Run";
+});
+resetButton.addEventListener("click", () => {
+  playToggle.textContent = "Run";
+});
+exportCsv.addEventListener("click", exportTrialCsv);
 clearLog.addEventListener("click", () => {
   logBody.textContent = "";
+  trialLog.length = 0;
+  chartSeries = [];
+  chartTitle.textContent = "Run an experiment to generate curves";
+  chartSummary.textContent = "The chart will compare ideal and real hydraulic predictions after an automated run.";
+  runStatus.textContent = "Ready";
+  drawChart();
 });
 
-window.addEventListener("resize", resizeRenderer);
+window.addEventListener("resize", () => {
+  resizeRenderer();
+  drawChart();
+});
 
 syncReadouts();
+drawChart();
 if (initThree()) {
   renderModel(performance.now());
   requestAnimationFrame(tick);
