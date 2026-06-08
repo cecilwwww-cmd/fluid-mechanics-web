@@ -1,157 +1,246 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>注射器液压挖掘机 3D 数字实验</title>
+    <title>Syringe Hydraulic Excavator Lab</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <main class="app-shell">
-      <section class="workspace" aria-label="液压挖掘机 3D 实验区">
-        <div class="topbar">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Fluid Mechanics Lab</p>
+          <h1>Syringe Hydraulic Excavator Experiment Dashboard</h1>
+        </div>
+        <div class="status-grid" aria-label="live hydraulic indicators">
+          <div><span>Output pressure</span><strong id="pressureReadout">0.00 kPa</strong></div>
+          <div><span>Output force</span><strong id="forceReadout">0.00 N</strong></div>
+          <div><span>Efficiency</span><strong id="efficiencyReadout">100%</strong></div>
+        </div>
+      </header>
+
+      <section class="model-panel" aria-label="compact physical model preview">
+        <div class="section-heading">
           <div>
-            <p class="eyebrow">Fluid Mechanics Lab</p>
-            <h1>注射器液压挖掘机 3D 数字实验</h1>
+            <p class="eyebrow">Physical Model Motion</p>
+            <h2>3D Hydraulic Excavator</h2>
           </div>
-          <div class="status-grid" aria-label="实验实时指标">
-            <div>
-              <span>压力</span>
-              <strong id="pressureReadout">0.00 kPa</strong>
-            </div>
-            <div>
-              <span>输出力</span>
-              <strong id="forceReadout">0.00 N</strong>
-            </div>
-            <div>
-              <span>效率</span>
-              <strong id="efficiencyReadout">100%</strong>
-            </div>
-          </div>
+          <button id="playToggle" class="ghost-button" type="button">Run</button>
         </div>
-
         <div class="stage-wrap">
-          <div id="threeStage" aria-label="三维液压挖掘机运动模拟"></div>
-          <div class="view-hint">拖动画面旋转视角</div>
-          <div class="floating-readouts" aria-label="位移与流量读数">
-            <div><span>输入位移</span><strong id="inputStrokeReadout">0.0 mm</strong></div>
-            <div><span>输出位移</span><strong id="outputStrokeReadout">0.0 mm</strong></div>
-            <div><span>流量</span><strong id="flowReadout">0.0 mL/s</strong></div>
-          </div>
+          <div id="threeStage" aria-label="3D hydraulic excavator motion simulation"></div>
+          <div class="view-hint">Drag to rotate</div>
         </div>
-      </section>
+        <div class="floating-readouts compact-readouts" aria-label="stroke and flow readouts">
+          <div><span>Input stroke</span><strong id="inputStrokeReadout">0.0 mm</strong></div>
+          <div><span>Output stroke</span><strong id="outputStrokeReadout">0.0 mm</strong></div>
+          <div><span>Flow rate</span><strong id="flowReadout">0.0 mL/s</strong></div>
+          <div><span>Reynolds number</span><strong id="reReadout">0</strong></div>
+        </div>
 
-      <aside class="control-panel" aria-label="实验控制台">
-        <section class="panel-section">
-          <div class="section-heading">
-            <h2>控制回路</h2>
-            <button id="playToggle" class="primary-button" type="button">运行</button>
+        <section class="mini-panel">
+          <h3>Motion Setup</h3>
+          <div class="mode-grid" role="radiogroup" aria-label="observed hydraulic circuit">
+            <label><input type="radio" name="circuit" value="boom" checked><span>Boom</span></label>
+            <label><input type="radio" name="circuit" value="arm"><span>Forearm</span></label>
+            <label><input type="radio" name="circuit" value="bucket"><span>Bucket</span></label>
           </div>
-          <div class="mode-grid" role="radiogroup" aria-label="当前观察回路">
-            <label><input type="radio" name="circuit" value="boom" checked><span>主臂</span></label>
-            <label><input type="radio" name="circuit" value="arm"><span>小臂</span></label>
-            <label><input type="radio" name="circuit" value="bucket"><span>铲斗</span></label>
-          </div>
-          <div class="circuit-legend">
-            <span><i class="swatch boom"></i>主臂缸回路</span>
-            <span><i class="swatch arm"></i>小臂缸回路</span>
-            <span><i class="swatch bucket"></i>铲斗缸回路</span>
-          </div>
-          <p class="principle-note">每种颜色表示一条独立液压回路：输入注射器推动水，经软管传到对应执行缸，再推动连杆转动。</p>
           <label class="slider-row circuit-slider">
-            <span>主臂注射器</span>
+            <span>Boom</span>
             <input id="boomStroke" type="range" min="0" max="60" value="18" step="0.5">
             <output id="boomStrokeValue">18.0 mm</output>
           </label>
           <label class="slider-row circuit-slider">
-            <span>小臂注射器</span>
+            <span>Forearm</span>
             <input id="armStroke" type="range" min="0" max="60" value="16" step="0.5">
             <output id="armStrokeValue">16.0 mm</output>
           </label>
           <label class="slider-row circuit-slider">
-            <span>铲斗注射器</span>
+            <span>Bucket</span>
             <input id="bucketStroke" type="range" min="0" max="60" value="22" step="0.5">
             <output id="bucketStrokeValue">22.0 mm</output>
           </label>
           <label class="slider-row">
-            <span>推动速度</span>
+            <span>Push speed</span>
             <input id="pushSpeed" type="range" min="4" max="80" value="28" step="1">
             <output id="pushSpeedValue">28 mm/s</output>
           </label>
-          <div class="button-row">
-            <button id="resetButton" type="button">复位</button>
-            <button id="sampleButton" type="button">记录数据</button>
-          </div>
+          <button id="resetButton" class="wide-button" type="button">Reset motion</button>
+        </section>
+      </section>
+
+      <section class="dashboard" aria-label="numerical experiment dashboard">
+        <section class="knowledge-strip">
+          <strong>Course knowledge used:</strong>
+          <span>Ch2 Fluid properties</span>
+          <span>Ch3 Pressure</span>
+          <span>Ch5 Continuity</span>
+          <span>Ch7 Energy</span>
+          <span>Ch10 Conduit losses</span>
+          <em id="experimentHypothesis" class="assistive-text"></em>
         </section>
 
-        <section class="panel-section">
-          <h2>几何与液体</h2>
-          <label class="slider-row">
-            <span>输入直径</span>
-            <input id="inputDiameter" type="range" min="8" max="28" value="18" step="0.5">
-            <output id="inputDiameterValue">18.0 mm</output>
-          </label>
-          <label class="slider-row">
-            <span>输出直径</span>
-            <input id="outputDiameter" type="range" min="8" max="35" value="24" step="0.5">
-            <output id="outputDiameterValue">24.0 mm</output>
-          </label>
-          <label class="slider-row">
-            <span>管长</span>
-            <input id="tubeLength" type="range" min="20" max="180" value="75" step="5">
-            <output id="tubeLengthValue">75 cm</output>
-          </label>
+        <section class="experiment-grid">
+          <article class="experiment-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Experiment 1</p>
+                <h2>Ideal Hydraulic Transmission</h2>
+              </div>
+              <button id="runIdeal" class="primary-button" type="button">Run Experiment</button>
+            </div>
+            <p class="hypothesis">Verify Pascal's law and continuity: larger output area increases force but reduces stroke.</p>
+            <input class="mode-radio" type="radio" name="experiment" value="ideal" checked>
+            <label class="slider-row">
+              <span>Input diameter</span>
+              <input id="inputDiameter" type="range" min="8" max="28" value="18" step="0.5">
+              <output id="inputDiameterValue">18.0 mm</output>
+            </label>
+            <label class="slider-row">
+              <span>Output diameter</span>
+              <input id="outputDiameter" type="range" min="8" max="35" value="24" step="0.5">
+              <output id="outputDiameterValue">24.0 mm</output>
+            </label>
+            <div class="experiment-formulas" aria-label="experiment 1 formulas">
+              <p><strong>Formulas</strong></p>
+              <span><i>P</i><sub>in</sub> = <i>F</i><sub>in</sub> / <i>A</i><sub>in</sub></span>
+              <span><i>F</i><sub>out,ideal</sub> = <i>P</i><sub>in</sub><i>A</i><sub>out</sub></span>
+              <span><i>Q</i> = <i>A</i><sub>in</sub><i>v</i><sub>in</sub> = <i>A</i><sub>out</sub><i>v</i><sub>out</sub></span>
+              <span><i>s</i><sub>out</sub> = (<i>A</i><sub>in</sub> / <i>A</i><sub>out</sub>)<i>s</i><sub>in</sub></span>
+            </div>
+            <p class="run-note">Auto sweep: output diameter from 12 mm to 32 mm.</p>
+          </article>
+
+          <article class="experiment-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Experiment 2</p>
+                <h2>Tube Flow Loss</h2>
+              </div>
+              <button id="runTube" class="primary-button" type="button">Run Experiment</button>
+            </div>
+            <p class="hypothesis">Verify conduit loss: longer tubes increase head loss and reduce output pressure.</p>
+            <input class="mode-radio" type="radio" name="experiment" value="tube">
+            <label class="slider-row">
+              <span>Tube diameter</span>
+              <input id="tubeDiameter" type="range" min="2" max="8" value="4" step="0.25">
+              <output id="tubeDiameterValue">4.00 mm</output>
+            </label>
+            <label class="slider-row">
+              <span>Tube length</span>
+              <input id="tubeLength" type="range" min="20" max="180" value="75" step="5">
+              <output id="tubeLengthValue">75 cm</output>
+            </label>
+            <div class="experiment-formulas" aria-label="experiment 2 formulas">
+              <p><strong>Formulas</strong></p>
+              <span><i>Re</i> = &rho;<i>VD</i> / &mu;</span>
+              <span><i>h</i><sub>f</sub> = <i>f</i>(<i>L</i>/<i>D</i>)<i>V</i><sup>2</sup> / 2<i>g</i></span>
+              <span>&Delta;<i>P</i><sub>f</sub> = &rho;<i>g</i><i>h</i><sub>f</sub></span>
+              <span><i>P</i><sub>out</sub> = <i>P</i><sub>in</sub> - &Delta;<i>P</i><sub>f</sub></span>
+            </div>
+            <p class="run-note">Auto sweep: tube length from 20 cm to 180 cm.</p>
+          </article>
+
+          <article class="experiment-card">
+            <div class="card-heading">
+              <div>
+                <p class="eyebrow">Experiment 3</p>
+                <h2>Minor Losses and Connectors</h2>
+              </div>
+              <button id="runMinor" class="primary-button" type="button">Run Experiment</button>
+            </div>
+            <p class="hypothesis">Verify local losses: connectors and bends add K-loss and reduce efficiency.</p>
+            <input class="mode-radio" type="radio" name="experiment" value="minor">
+            <label class="slider-row">
+              <span>Connector K</span>
+              <input id="minorK" type="range" min="0" max="4" value="1.2" step="0.1">
+              <output id="minorKValue">1.2</output>
+            </label>
+            <div class="split-sliders">
+              <label class="slider-row">
+                <span>Leakage</span>
+                <input id="leakage" type="range" min="0" max="12" value="2" step="0.5">
+                <output id="leakageValue">2.0%</output>
+              </label>
+              <label class="slider-row">
+                <span>Air bubbles</span>
+                <input id="airBubble" type="range" min="0" max="25" value="3" step="1">
+                <output id="airBubbleValue">3%</output>
+              </label>
+            </div>
+            <div class="experiment-formulas" aria-label="experiment 3 formulas">
+              <p><strong>Formulas</strong></p>
+              <span><i>h</i><sub>L,minor</sub> = <i>K</i><i>V</i><sup>2</sup> / 2<i>g</i></span>
+              <span>&Delta;<i>P</i><sub>minor</sub> = &rho;<i>g</i><i>h</i><sub>L,minor</sub></span>
+              <span><i>F</i><sub>real</sub> = (<i>P</i><sub>in</sub> - &Delta;<i>P</i>)<i>A</i><sub>out</sub></span>
+              <span>&eta; = <i>F</i><sub>real</sub> / <i>F</i><sub>ideal</sub></span>
+            </div>
+            <p class="run-note">Auto sweep: connector K from 0 to 4.</p>
+          </article>
         </section>
 
-        <section class="panel-section">
-          <h2>损失因素</h2>
-          <label class="slider-row">
-            <span>气泡比例</span>
-            <input id="airBubble" type="range" min="0" max="30" value="4" step="1">
-            <output id="airBubbleValue">4%</output>
-          </label>
-          <label class="slider-row">
-            <span>摩擦系数</span>
-            <input id="friction" type="range" min="0" max="45" value="10" step="1">
-            <output id="frictionValue">10%</output>
-          </label>
-          <label class="slider-row">
-            <span>泄漏率</span>
-            <input id="leakage" type="range" min="0" max="25" value="2" step="1">
-            <output id="leakageValue">2%</output>
-          </label>
+        <section class="results-layout">
+          <article class="chart-card">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Data Curves</p>
+                <h2 id="chartTitle">Run an experiment to generate curves</h2>
+              </div>
+              <div class="compact-actions">
+                <button id="sampleButton" type="button">Record current</button>
+                <button id="exportCsv" type="button">Export CSV</button>
+                <button id="clearLog" type="button">Clear</button>
+              </div>
+            </div>
+            <canvas id="chartCanvas" width="920" height="360" aria-label="experiment result chart"></canvas>
+            <p id="chartSummary" class="chart-summary">The chart will compare ideal and real hydraulic predictions after an automated run.</p>
+          </article>
+
+          <article class="metrics-panel">
+            <h2>Current Numerical Results</h2>
+            <div class="metrics-grid">
+              <div><span>Flow regime</span><strong id="regimeReadout">Laminar</strong></div>
+              <div><span>Major loss</span><strong id="hfReadout">0.000 m</strong></div>
+              <div><span>Minor loss</span><strong id="hmReadout">0.000 m</strong></div>
+              <div><span>Pressure loss</span><strong id="lossPressureReadout">0.00 kPa</strong></div>
+              <div><span>Ideal force</span><strong id="idealForceReadout">0.00 N</strong></div>
+              <div><span>Real force</span><strong id="realForceReadout">0.00 N</strong></div>
+            </div>
+            <dl class="formula-list">
+              <div><dt>Ideal pressure</dt><dd id="idealPressureFormula"><i>P</i> = <i>F</i>/<i>A</i></dd></div>
+              <div><dt>Continuity</dt><dd id="continuityFormula"><i>Q</i> = <i>Av</i></dd></div>
+              <div><dt>Major loss</dt><dd id="majorLossFormula"><i>h</i><sub>f</sub> = <i>f</i>(<i>L</i>/<i>D</i>)<i>V</i><sup>2</sup>/2<i>g</i></dd></div>
+              <div><dt>Minor loss</dt><dd id="minorLossFormula"><i>h</i><sub>L,minor</sub> = <i>K</i><i>V</i><sup>2</sup>/2<i>g</i></dd></div>
+            </dl>
+          </article>
         </section>
 
-        <section class="panel-section formula-panel">
-          <h2>计算模型</h2>
-          <dl>
-            <div><dt>帕斯卡定律</dt><dd id="pascalFormula">P = F / A</dd></div>
-            <div><dt>连续性方程</dt><dd id="continuityFormula">Q = A v</dd></div>
-            <div><dt>输出位移</dt><dd id="strokeFormula">s₂ = V / A₂</dd></div>
-          </dl>
-        </section>
+      </section>
 
-        <section class="panel-section data-panel">
-          <div class="section-heading">
-            <h2>实验记录</h2>
-            <button id="clearLog" type="button">清空</button>
-          </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>回路</th>
-                  <th>P/kPa</th>
-                  <th>F/N</th>
-                  <th>s₂/mm</th>
-                  <th>η</th>
-                </tr>
-              </thead>
-              <tbody id="logBody"></tbody>
-            </table>
-          </div>
-        </section>
-      </aside>
+      <section class="data-panel">
+        <div class="section-heading">
+          <h2>Automatic Experiment Log</h2>
+          <span id="runStatus" class="run-status">Ready</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Mode</th>
+                <th>Variable</th>
+                <th>Value</th>
+                <th>Re</th>
+                <th>&Delta;<i>p</i> / kPa</th>
+                <th><i>F</i><sub>ideal</sub> / N</th>
+                <th><i>F</i><sub>real</sub> / N</th>
+                <th>&eta;</th>
+              </tr>
+            </thead>
+            <tbody id="logBody"></tbody>
+          </table>
+        </div>
+      </section>
     </main>
 
     <script src="vendor/three.min.js"></script>
